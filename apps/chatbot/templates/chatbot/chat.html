@@ -1,0 +1,174 @@
+{% extends "chatbot/base.html" %}
+
+{% block content %}
+<div id="main-container" class="main-container">
+    <div class="video-container">
+        <div class="video-notice">본 강의는 AI휴먼이 설명하는 강의입니다</div>
+        <video controls autoplay muted loop><source src="{{ url_for('program_chat.static', filename='video/pro_video.mp4') }}" type="video/mp4"></video>
+        <button id="toggle-chat-btn">채팅 열기</button>
+    </div>
+    <div class="chat-container">
+        <div class="chat-header">AI 챗봇</div>
+        <div class="chat-messages"></div>
+        <div class="chat-input-area">
+            <input type="text" id="chat-input" placeholder="메시지를 입력하세요...">
+            <button id="send-btn"> ▶</button>
+        </div>
+    </div>
+</div> 
+{% endblock %}
+
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // --- 채팅창 열고 닫기 기능 (기존과 동일) ---
+    const toggleBtn = document.getElementById('toggle-chat-btn');
+    const mainContainer = document.getElementById('main-container');
+    toggleBtn.addEventListener('click', () => {
+        mainContainer.classList.toggle('chat-open');
+        toggleBtn.textContent = mainContainer.classList.contains('chat-open') ? '채팅 닫기' : '채팅 열기';
+    });
+
+    // --- ▼▼▼ 챗봇 기능 (최종 완성본) ▼▼▼ ---
+    const sendBtn = document.getElementById('send-btn');
+    const chatInput = document.getElementById('chat-input');
+    const messagesContainer = document.querySelector('.chat-messages');
+    let chatHistory = [];
+
+    function escapeHtml(unsafe) {
+        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function addMessageToScreen(role, content = '') {
+        const messageDiv = document.createElement('div');
+        messageDiv.style.marginBottom = '15px';
+        messageDiv.dataset.role = role;
+        const prefix = `<strong>${role === 'user' ? '나' : '챗봇'}:</strong><br>`;
+        if (role === 'user') {
+            messageDiv.innerHTML = prefix + escapeHtml(content).replace(/\n/g, '<br>');
+        } else {
+            // 챗봇 메시지는 텍스트와 코드 블록이 들어갈 컨테이너 역할만 합니다.
+            messageDiv.innerHTML = prefix;
+        }
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        return messageDiv;
+    }
+    
+    // ▼▼▼ 여기가 최종 수정된 sendMessage 함수입니다 ▼▼▼
+    async function sendMessage() {
+        const messageText = chatInput.value.trim();
+        if (messageText === '') return;
+
+        addMessageToScreen('user', messageText);
+        chatHistory.push({ "role": "user", "content": messageText });
+        chatInput.value = '';
+
+        const botMessageDiv = addMessageToScreen('assistant');
+        let fullBotResponse = '';
+
+        try {
+            const response = await fetch("{{ url_for('program_chat.process_chat') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ "message": messageText, "history": chatHistory.slice(0, -1) }),
+            });
+
+            if (!response.ok) throw new Error('서버 응답 오류');
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            // 일반 텍스트가 표시될 span 요소를 미리 생성
+            let currentTextSpan = document.createElement('span');
+            botMessageDiv.appendChild(currentTextSpan);
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                fullBotResponse += chunk;
+
+                // ★★★ 핵심 로직 ★★★
+                // 받은 청크(chunk)가 코드 블록인지, 일반 텍스트인지 실시간으로 판단합니다.
+                if (chunk.trim().startsWith('```') && chunk.trim().endsWith('```')) {
+                    // 1. 청크가 코드 블록일 경우:
+                    //    - 현재까지의 일반 텍스트 span을 마무리합니다.
+                    //    - 스타일이 적용된 코드 블록 요소를 새로 만들어 바로 삽입합니다.
+                    currentTextSpan = document.createElement('span'); // 다음 텍스트를 위한 새 span 준비
+                    renderCodeBlock(botMessageDiv, chunk); // 코드 블록 렌더링 함수 호출
+                    botMessageDiv.appendChild(currentTextSpan); // 새 span을 div에 추가
+
+                } else {
+                    // 2. 청크가 일반 텍스트일 경우:
+                    //    - 현재 텍스트 span에 내용을 계속 추가하여 타이핑 효과를 줍니다.
+                    currentTextSpan.innerHTML += escapeHtml(chunk).replace(/\n/g, '<br>');
+                }
+
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            chatHistory.push({ "role": "assistant", "content": fullBotResponse });
+
+        } catch (error) {
+            console.error('Error:', error);
+            const errorSpan = document.createElement('span');
+            errorSpan.textContent = '죄송합니다, 오류가 발생했습니다.';
+            botMessageDiv.appendChild(errorSpan);
+        }
+    }
+
+    // 코드 블록 청크를 받아서 스타일링된 HTML 요소로 만들어 삽입하는 함수
+    function renderCodeBlock(parentDiv, codeContent) {
+        const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/;
+        const match = codeBlockRegex.exec(codeContent);
+        if (!match) return;
+
+        const language = match[1] || 'plaintext';
+        const code = match[2];
+
+        const container = document.createElement('div');
+        container.className = 'code-block-container';
+
+        const button = document.createElement('button');
+        button.className = 'copy-btn';
+        button.textContent = '복사';
+        
+        const pre = document.createElement('pre');
+        const codeEl = document.createElement('code');
+        codeEl.className = `language-${escapeHtml(language)}`;
+        codeEl.textContent = code; // escapeHtml 대신 textContent를 사용해 안전하게 삽입
+
+        pre.appendChild(codeEl);
+        container.appendChild(button);
+        container.appendChild(pre);
+        
+        // 부모 div(챗봇 메시지 div)에 최종적으로 추가
+        parentDiv.appendChild(container);
+
+        // Syntax Highlighting 및 복사 버튼 이벤트 적용
+        hljs.highlightElement(codeEl);
+        button.addEventListener('click', () => {
+            navigator.clipboard.writeText(code).then(() => {
+                button.textContent = '복사 완료!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = '복사';
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+        });
+    }
+
+    // --- 이벤트 리스너 (기존과 동일) ---
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', (event) => {
+        if (event.isComposing) return;
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+</script>
+{% endblock %}

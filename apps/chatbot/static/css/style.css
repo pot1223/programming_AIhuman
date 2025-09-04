@@ -1,0 +1,220 @@
+body{
+    background-color: #f5f5f5;
+}
+
+h4{
+    margin-top:20px;
+}
+
+input[type="search"]{
+    background-color: #f5f5f5;
+}
+
+.dt-auth-main{
+    width:400px;
+    margin-top:150px;
+}
+
+.dt-auth-main .card{
+    box-shadow: 0 12px 18px 2px rgba(34, 0, 51, 0.04), 0 6px 22px 4px rgba(7, 48, 114, 0.12),
+    0 6px 10px -4px rgba(14, 13, 26, 0.12) !important;
+    border-radius: 16px;
+}
+
+.dt-auth-main .dt-auth-login {
+    height:300px !important;
+}
+
+.dt-auth-main .dt-auth-signup{
+    height:340px !important;
+}
+
+.dt-auth-main header{
+    text-align:center;
+    margin: 30px 0 0 0 ;
+    font-size: 24px;
+}
+
+.dt-auth-main section{
+    width:300px;
+    margin:10px auto;
+}
+
+.dt-auth-flash{
+    font-size : 14px;
+    color: #9c1a1c;
+}
+
+.dt-auth-input{
+    margin-top:10px;
+}
+
+.dt-auth-btn{
+    margin:30px 0 0 0;
+}
+
+.dt-search{
+    height:28px !important;
+}
+
+.main-container {
+    display: flex;
+    /* 화면 전체 높이를 차지하도록 설정. 필요에 따라 조정하세요. ex) height: 80vh; */
+    height: calc(100vh - 56px); /* 100vh에서 네비게이션 바 높이(약 56px)를 뺀 값 */
+    transition: all 0.5s ease-in-out; /* 부드러운 전환 효과 */
+}
+
+/* 영상 컨테이너 */
+.video-container {
+    flex-grow: 1; /* 남는 공간을 모두 차지 */
+    background-color: #000;
+    position: relative; /* 버튼 위치의 기준점 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: width 0.5s ease-in-out;
+}
+
+.video-container video {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+}
+
+/* 채팅창 컨테이너 */
+.chat-container {
+    width: 0; /* 처음에는 너비를 0으로 하여 숨김 */
+    opacity: 0; /* 완전히 투명하게 */
+    overflow: hidden; /* 내용이 넘치면 숨김 */
+    background-color: #ffffff;
+    border-left: 1px solid #ddd;
+    display: flex;
+    flex-direction: column; /* 아이템을 세로로 정렬 */
+    transition: all 0.5s ease-in-out;
+}
+
+/* ★★★ 채팅창이 열렸을 때의 스타일 ★★★ */
+.main-container.chat-open .chat-container {
+    width: 700px; /* 채팅창 너비 */
+    opacity: 1; /* 불투명하게 */
+}
+
+/* 채팅창 헤더 */
+.chat-header {
+    padding: 15px;
+    background-color: #343a40;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* 메시지들이 보이는 영역 */
+.chat-messages {
+    flex-grow: 1;
+    padding: 15px;
+    overflow-y: auto; /* 메시지가 많아지면 스크롤 생성 */
+}
+
+/* 메시지 입력 영역 */
+.chat-input-area {
+    display: flex;
+    padding: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.chat-input-area input {
+    flex-grow: 1;
+    border: 1px solid #ccc;
+    border-radius: 20px;
+    padding: 10px 15px;
+    margin-right: 10px;
+    outline: none;
+}
+
+.chat-input-area button {
+    border: none;
+    background-color: #007bff;
+    color: white;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 18px;
+}
+.chat-input-area button:hover {
+    background-color: #0056b3;
+}
+
+/* 채팅창 토글 버튼 */
+#toggle-chat-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    padding: 10px 15px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: 1px solid white;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+#toggle-chat-btn:hover {
+    background-color: rgba(0, 0, 0, 0.9);
+}
+
+.code-block-container {
+    position: relative; /* 복사 버튼의 기준점 */
+    margin: 10px 0;
+}
+
+/* Highlight.js가 생성하는 <pre><code> 블록 스타일 */
+.code-block-container pre {
+    margin: 0;
+}
+
+.code-block-container pre code.hljs {
+    padding: 15px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 14px;
+}
+
+/* 복사 버튼 스타일 */
+.copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: #555;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.3s, background-color 0.3s;
+}
+
+.copy-btn:hover {
+    opacity: 1;
+    background-color: #333;
+}
+
+.copy-btn.copied {
+    background-color: #28a745; /* 초록색으로 변경 */
+}
+
+/* 영상 상단 안내 문구 스타일 */
+.video-notice {
+    position: absolute; /* video-container를 기준으로 위치 고정 */
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.6); /* 반투명 검은색 배경 */
+    color: white;
+    text-align: center;
+    padding: 15px;
+    font-size: 16px;
+    z-index: 5; /* 비디오보다는 위, 채팅 버튼보다는 아래에 위치 */
+    box-sizing: border-box; /* 패딩이 너비에 포함되도록 설정 */
+}
