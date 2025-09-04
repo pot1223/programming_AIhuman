@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint, render_template, flash, url_for, redirect, request, jsonify, Response, current_app
+from flask import Blueprint, render_template, flash, url_for, redirect, request, jsonify, Response, current_app, session
 from apps.app import db 
 from apps.chatbot.forms import SignUpForm, LoginForm
 from apps.models import User, ChatLog,  UserSession
@@ -11,6 +11,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationChain
 from langchain.schema import HumanMessage, AIMessage
 import re 
+from datetime import datetime
 
 program_chat = Blueprint(
     "program_chat",
@@ -34,8 +35,11 @@ def index():
 
         if user is not None and user.verify_password(form.password.data):
             login_user(user)
-            # 'remember=True' 옵션을 추가하면 브라우저를 껐다 켜도 로그인이 유지됩니다.
-            # login_user(user, remember=True)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                # AJAX 요청이면, JSON 형태로 성공 여부와 이동할 URL을 알려줍니다.
+                return jsonify(success=True, redirect_url=url_for("program_chat.chat"))
+            
+            # 일반적인 Form 제출이면, 기존처럼 redirect합니다.
             return redirect(url_for("program_chat.chat"))
         flash("학번 또는 비밀번호가 일치하지 않습니다.")
 
@@ -79,6 +83,22 @@ def chat():
 def logout():
     logout_user()
     return redirect(url_for("program_chat.index"))
+
+@program_chat.route("/track-logout", methods=["POST"])
+@login_required
+def track_logout():
+    # 세션에서 현재 user_session의 id를 가져옵니다.
+    session_id = session.get('user_session_id')
+    if session_id:
+        user_session = UserSession.query.get(session_id)
+        # 로그아웃 시간이 아직 기록되지 않은 경우에만 업데이트합니다.
+        # (이미 로그아웃 버튼을 눌렀을 수 있기 때문)
+        if user_session and user_session.logout_time is None:
+            user_session.logout_time = datetime.now()
+            db.session.commit()
+    # sendBeacon은 응답을 기다리지 않으므로 간단한 응답을 보냅니다.
+    return "", 204
+
 
 llm = ChatOpenAI(
     model_name=os.getenv("OPENAI_API_MODEL", "gpt-4-turbo"),

@@ -29,6 +29,11 @@
         mainContainer.classList.toggle('chat-open');
         toggleBtn.textContent = mainContainer.classList.contains('chat-open') ? '채팅 닫기' : '채팅 열기';
     });
+    window.addEventListener('beforeunload', function(event) {
+        // 'track_logout' 으로 수정합니다.
+        const logoutUrl = "{{ url_for('program_chat.track_logout') }}";
+        navigator.sendBeacon(logoutUrl);
+    });
 
     // --- ▼▼▼ 챗봇 기능 (최종 완성본) ▼▼▼ ---
     const sendBtn = document.getElementById('send-btn');
@@ -55,8 +60,9 @@
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageDiv;
     }
+
     
-    // ▼▼▼ 여기가 최종 수정된 sendMessage 함수입니다 ▼▼▼
+// ▼▼▼ 여기가 최종 수정된 sendMessage 함수입니다 ▼▼▼
     async function sendMessage() {
         const messageText = chatInput.value.trim();
         if (messageText === '') return;
@@ -68,6 +74,13 @@
         const botMessageDiv = addMessageToScreen('assistant');
         let fullBotResponse = '';
 
+        // 1. 응답 대기 메시지 표시
+        const waitingMessage = document.createElement('span');
+        waitingMessage.className = 'waiting-message';
+        waitingMessage.textContent = '답변을 생성 중입니다...';
+        botMessageDiv.appendChild(waitingMessage);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
         try {
             const response = await fetch("{{ url_for('program_chat.process_chat') }}", {
                 method: 'POST',
@@ -76,35 +89,45 @@
             });
 
             if (!response.ok) throw new Error('서버 응답 오류');
-            
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             
-            // 일반 텍스트가 표시될 span 요소를 미리 생성
-            let currentTextSpan = document.createElement('span');
-            botMessageDiv.appendChild(currentTextSpan);
+            // ▼▼▼ 수정된 부분 ▼▼▼
+            let isFirstChunk = true;
+            let currentTextSpan = null; // 변수 선언만 하고, 아직 만들거나 추가하지 않음
+            // ▲▲▲ 여기까지 수정 ▲▲▲
 
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
 
+                // ▼▼▼ 수정된 부분 ▼▼▼
+                // 첫번째 청크가 도착하면 '그때' 대기 메시지를 지운다.
+                if (isFirstChunk) {
+                    botMessageDiv.removeChild(waitingMessage);
+                    isFirstChunk = false;
+                }
+                // ▲▲▲ 여기까지 수정 ▲▲▲
+
                 const chunk = decoder.decode(value);
                 fullBotResponse += chunk;
 
-                // ★★★ 핵심 로직 ★★★
-                // 받은 청크(chunk)가 코드 블록인지, 일반 텍스트인지 실시간으로 판단합니다.
                 if (chunk.trim().startsWith('```') && chunk.trim().endsWith('```')) {
-                    // 1. 청크가 코드 블록일 경우:
-                    //    - 현재까지의 일반 텍스트 span을 마무리합니다.
-                    //    - 스타일이 적용된 코드 블록 요소를 새로 만들어 바로 삽입합니다.
-                    currentTextSpan = document.createElement('span'); // 다음 텍스트를 위한 새 span 준비
-                    renderCodeBlock(botMessageDiv, chunk); // 코드 블록 렌더링 함수 호출
-                    botMessageDiv.appendChild(currentTextSpan); // 새 span을 div에 추가
+                    // 코드 블록이 오면, 텍스트를 담던 span을 null로 초기화해서 새롭게 시작하도록 함
+                    currentTextSpan = null; 
+                    renderCodeBlock(botMessageDiv, chunk);
 
                 } else {
-                    // 2. 청크가 일반 텍스트일 경우:
-                    //    - 현재 텍스트 span에 내용을 계속 추가하여 타이핑 효과를 줍니다.
+                    // ▼▼▼ 수정된 부분 ▼▼▼
+                    // 일반 텍스트일 경우, currentTextSpan이 없으면 새로 만든다.
+                    // (코드 블록 바로 뒤에 오는 텍스트를 처리하기 위함)
+                    if (!currentTextSpan) {
+                        currentTextSpan = document.createElement('span');
+                        botMessageDiv.appendChild(currentTextSpan);
+                    }
                     currentTextSpan.innerHTML += escapeHtml(chunk).replace(/\n/g, '<br>');
+                    // ▲▲▲ 여기까지 수정 ▲▲▲
                 }
 
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -113,9 +136,12 @@
 
         } catch (error) {
             console.error('Error:', error);
-            const errorSpan = document.createElement('span');
-            errorSpan.textContent = '죄송합니다, 오류가 발생했습니다.';
-            botMessageDiv.appendChild(errorSpan);
+            // 오류 발생 시에도 대기 메시지를 확실히 지움
+            if (botMessageDiv.contains(waitingMessage)) {
+                waitingMessage.textContent = '죄송합니다, 오류가 발생했습니다.';
+            } else {
+                 botMessageDiv.innerHTML += '죄송합니다, 오류가 발생했습니다.';
+            }
         }
     }
 
