@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 from flask import (Blueprint, Response, current_app, flash, jsonify,
-                   redirect, render_template, request, session, url_for)
+                   redirect, render_template, request, session, url_for, stream_with_context)
 from flask_login import (current_user, login_required, login_user,
                          logout_user)
 from langchain.schema import AIMessage, HumanMessage
@@ -14,9 +14,9 @@ from apps.app import db
 from apps.chatbot.forms import LoginForm
 from apps.models import ChatLog, User, UserSession
 
-# 새로 추가되는 라이브러리
-from langchain_chroma import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
+# --- ❗ Pinecone으로 변경된 라이브러리 ---
+from langchain_pinecone import PineconeVectorStore
+from langchain_openai import OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 
@@ -28,31 +28,35 @@ program_chat = Blueprint(
 )
 
 
+# --- ❗ 실시간 스트리밍을 위해 llm 설정 변경 ---
 llm = ChatOpenAI(
+    streaming=True, # 스트리밍 활성화
     model_name=os.getenv("OPENAI_API_MODEL", "gpt-4-turbo"),
     temperature=float(os.getenv("OPENAI_API_TEMPERATURE", 0.7)),
 )
 
-# chunking 작업이 완료된 database 불러오기
+# 1. 임베딩 모델 준비 (동일)
 embeddings = OpenAIEmbeddings(
     model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
 )
 
-# --- ❗ 배포 시 중요: Render의 영구 디스크 경로로 수정 ---
-# 로컬 테스트 시에는 "./chroma"를 사용하세요.
-# 배포 직전에 아래 경로로 변경해야 합니다.
-PERSIST_DIRECTORY = "/data/chroma" if os.getenv("RENDER") else "./chroma"
 
+# --- ❗ ChromaDB에서 Pinecone 클라우드 DB로 변경된 부분 ---
 
-# 기존 DB 불러오기
-vectordb = Chroma(
-    persist_directory=PERSIST_DIRECTORY,
-    collection_name="AIhuman-programming-3-14",
-    embedding_function=embeddings
+# 2. Pinecone 인덱스 이름 설정 (.env 파일에서 불러옵니다)
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
+
+# 3. 기존 Pinecone 인덱스에 연결하여 VectorStore(검색기능이 포함된 DB객체) 생성
+vectorstore = PineconeVectorStore.from_existing_index(
+    index_name=PINECONE_INDEX_NAME,
+    embedding=embeddings
 )
 
-# Retriever => 검색기
-retriever = vectordb.as_retriever(search_kwargs={"k": 4})
+# 4. Retriever(검색기) 생성 (VectorStore만 Pinecone으로 교체)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+
+# --- (이하 프롬프트 및 체인 설정은 기존과 동일합니다) ---
+
 
 # 수업 맥락 + 적대적 프롬프트 차단 + 컨텍스트 없으면 일반 지식 사용
 QA_PROMPT = PromptTemplate(
@@ -85,8 +89,8 @@ QA_PROMPT = PromptTemplate(
 conv_qa = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
-    return_source_documents=False,                  # 근거 문서 미사용
-    combine_docs_chain_kwargs={"prompt": QA_PROMPT} # {question}, {context} 프롬프트 사용
+    return_source_documents=False,
+    combine_docs_chain_kwargs={"prompt": QA_PROMPT}
 )
 
 @program_chat.route("/", methods=["GET", "POST"])
@@ -154,7 +158,6 @@ def process_chat():
     if not user_message:
         return jsonify({"error": "메시지가 없습니다."}), 400
 
-    # 프론트 히스토리 → [(human, ai), ...] 변환
     def to_chat_pairs(history):
         pairs, last_user = [], None
         for m in history:
@@ -164,7 +167,7 @@ def process_chat():
                 if last_user is not None:
                     pairs.append((last_user, ""))
                 last_user = content
-            else:  # assistant
+            else:
                 if last_user is None:
                     pairs.append(("", content))
                 else:
@@ -176,41 +179,55 @@ def process_chat():
 
     chat_pairs = to_chat_pairs(history_data)
 
-    try:
-        res = conv_qa({
-            "question": user_message,
-            "chat_history": chat_pairs
-        })
-        full_response = res["answer"].strip()
-    except Exception as e:
-        current_app.logger.error(f"Error during Conversational RAG invoke: {e}")
-        return jsonify({"response": "죄송합니다. 응답 생성 중 오류가 발생했습니다."}), 500
+    @stream_with_context
+    def generate_response_stream():
+        yield "잠시만 기다려주세요..."
+        
+        full_response = ""
+        CLEAR_SIGNAL = "<!--CLEAR-->"
 
-    # 이하 기존 로깅/스트리밍 로직 그대로 유지
-    code_blocks = re.findall(r'```[\s\S]*?```', full_response)
-    extracted_code = "\n\n".join(code_blocks) if code_blocks else None
+        try:
+            # 1단계: LLM으로부터 전체 답변을 스트리밍으로 받아와 full_response에 저장
+            for chunk in conv_qa.stream({"question": user_message, "chat_history": chat_pairs}):
+                if "answer" in chunk:
+                    full_response += chunk["answer"]
 
-    try:
-        chat_log = ChatLog(
-            user_query=user_message,
-            assistant_response=full_response,
-            code=extracted_code,
-            user_id=current_user.id
-        )
-        db.session.add(chat_log)
-        db.session.commit()
-    except Exception as e:
-        current_app.logger.error(f"Error saving chat log to DB: {e}")
-        db.session.rollback()
+            # 2단계: "기다려주세요" 메시지를 지우라는 신호를 먼저 보냄
+            yield CLEAR_SIGNAL
 
-    parts = re.split(r'(```[\s\S]*?```)', full_response)
-    def generate_hybrid_stream():
-        for part in parts:
-            if part.strip().startswith('```') and part.strip().endswith('```'):
-                yield part
-            else:
-                for char in part:
-                    yield char
-                    time.sleep(0.05)
+            # 3단계: 완성된 답변을 텍스트와 코드 블록으로 분리
+            parts = re.split(r'(```[\s\S]*?```)', full_response)
 
-    return Response(generate_hybrid_stream(), mimetype='text/plain')
+            # 4단계: 분리된 조각들을 프론트엔드로 스트리밍
+            for part in parts:
+                if not part: continue
+
+                # 코드 블록이면 한 번에 전송
+                if part.strip().startswith('```') and part.strip().endswith('```'):
+                    yield part
+                # 텍스트이면 타이핑 효과를 위해 한 글자씩 전송
+                else:
+                    for char in part:
+                        yield char
+                        time.sleep(0.02)
+
+            # 5단계: 전체 답변을 DB에 저장
+            code_blocks = re.findall(r'```[\s\S]*?```', full_response)
+            extracted_code = "\n\n".join(code_blocks) if code_blocks else None
+            
+            chat_log = ChatLog(
+                user_query=user_message,
+                assistant_response=full_response,
+                code=extracted_code,
+                user_id=current_user.id
+            )
+            db.session.add(chat_log)
+            db.session.commit()
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error during RAG stream or DB logging: {e}")
+            yield CLEAR_SIGNAL
+            yield "죄송합니다. 응답 생성 중 오류가 발생했습니다."
+
+    return Response(generate_response_stream(), mimetype='text/plain')

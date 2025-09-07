@@ -12,9 +12,7 @@
         </div>
     </div>
 
- 
     <div class="resizer" id="resizer-drag-handle"></div>
-
 
     <div class="code-panel" id="code-panel">
         <div class="code-header">
@@ -32,7 +30,7 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
- 
+
         const sendBtn = document.getElementById('send-btn');
         const chatInput = document.getElementById('chat-input');
         const messagesContainer = document.querySelector('.chat-messages');
@@ -41,7 +39,6 @@
         const codePlaceholder = document.querySelector('.code-content .placeholder');
         let chatHistory = [];
 
-    
         function escapeHtml(unsafe) {
             return unsafe
                 .replace(/&/g, "&amp;")
@@ -50,6 +47,7 @@
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
         }
+
         function addMessageToScreen(role, content = '') {
             const messageDiv = document.createElement('div');
             messageDiv.style.marginBottom = '15px';
@@ -64,6 +62,7 @@
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             return messageDiv;
         }
+
         function renderCodeBlock(codeContent) {
             const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/;
             const match = codeBlockRegex.exec(codeContent);
@@ -88,9 +87,13 @@
             pre.appendChild(codeEl);
             container.appendChild(header);
             container.appendChild(pre);
-            if (codePlaceholder) {
-                codePlaceholder.style.display = 'none';
+
+            // Placeholder가 있다면 찾아서 삭제 (display:none 대신)
+            const existingPlaceholder = codeContainer.querySelector('.placeholder');
+            if (existingPlaceholder) {
+                existingPlaceholder.remove();
             }
+
             codeContainer.appendChild(container);
             codeContainer.scrollTop = codeContainer.scrollHeight;
             hljs.highlightElement(codeEl);
@@ -105,45 +108,92 @@
                 });
             });
         }
+
         async function sendMessage() {
             const messageText = chatInput.value.trim();
             if (messageText === '') return;
+
+            const isCodeViewerEmpty = codeContainer.querySelector('.placeholder');
+            if (isCodeViewerEmpty) {
+                isCodeViewerEmpty.textContent = 'AI 응답을 기다리는 중...';
+            }
+
             addMessageToScreen('user', messageText);
             chatHistory.push({ "role": "user", "content": messageText });
             chatInput.value = '';
             chatInput.focus();
+
             const botMessageDiv = addMessageToScreen('assistant');
-            let fullBotResponse = '';
+            let fullBotResponseForHistory = '';
+            let waitingMessageCleared = false;
+            const CLEAR_SIGNAL = "<!--CLEAR-->";
+            let codeRendered = false;
+
             let currentTextSpan = document.createElement('span');
             botMessageDiv.appendChild(currentTextSpan);
+
             try {
                 const response = await fetch("{{ url_for('program_chat.process_chat') }}", {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ "message": messageText, "history": chatHistory.slice(0, -1) }),
                 });
+
                 if (!response.ok) throw new Error('서버 응답 오류');
+
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
+
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    fullBotResponse += chunk;
-                    if (chunk.trim().startsWith('```')) {
+
+                    let chunk = decoder.decode(value, { stream: true });
+                    
+                    if (!waitingMessageCleared) {
+                        if (chunk.includes(CLEAR_SIGNAL)) {
+                            currentTextSpan.innerHTML = '';
+                            waitingMessageCleared = true;
+                            chunk = chunk.split(CLEAR_SIGNAL)[1] || '';
+                        } else {
+                            currentTextSpan.innerHTML = escapeHtml(chunk);
+                            continue;
+                        }
+                    }
+
+                    if (!chunk) continue;
+
+                    fullBotResponseForHistory += chunk;
+                    if (chunk.trim().startsWith('```') && chunk.trim().endsWith('```')) {
+                        // 코드 뷰어 내용이 자동으로 삭제되지 않도록 수정
                         renderCodeBlock(chunk);
+                        codeRendered = true;
+                        
+                        currentTextSpan.innerHTML = currentTextSpan.innerHTML.replace(/(<br\s*\/?>\s*)+$/, '');
+                        const placeholderText = '[코드가 코드 뷰어에 표시되었습니다.]';
+                        const placeholderHtml = `<div style="margin: 0.5rem 0; font-style: italic; color: #888;">${escapeHtml(placeholderText)}</div>`;
+                        currentTextSpan.innerHTML += placeholderHtml;
+
                     } else {
                         currentTextSpan.innerHTML += escapeHtml(chunk).replace(/\n/g, '<br>');
                     }
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 }
-                chatHistory.push({ "role": "assistant", "content": fullBotResponse });
+                chatHistory.push({ "role": "assistant", "content": fullBotResponseForHistory });
+
+                if (!codeRendered && isCodeViewerEmpty) {
+                    isCodeViewerEmpty.textContent = '이번 답변에는 코드가 포함되어 있지 않습니다.';
+                }
+
             } catch (error) {
                 console.error('Error:', error);
+                if(!waitingMessageCleared) currentTextSpan.innerHTML = '';
                 currentTextSpan.innerHTML += '<br><strong style="color: red;">오류가 발생했습니다.</strong>';
+                if (isCodeViewerEmpty) {
+                    isCodeViewerEmpty.textContent = '오류가 발생했습니다.';
+                }
             }
         }
-
 
         sendBtn.addEventListener('click', sendMessage);
         chatInput.addEventListener('keydown', (event) => {
@@ -153,13 +203,15 @@
                 sendMessage();
             }
         });
+
         clearCodeBtn.addEventListener('click', () => {
             codeContainer.innerHTML = '';
-            if (codePlaceholder) {
-                 codeContainer.appendChild(codePlaceholder);
-                 codePlaceholder.style.display = 'block';
-            }
+            const newPlaceholder = document.createElement('div');
+            newPlaceholder.className = 'placeholder';
+            newPlaceholder.textContent = 'AI가 생성한 코드가 여기에 표시됩니다.';
+            codeContainer.appendChild(newPlaceholder);
         });
+
         window.addEventListener('beforeunload', function(event) {
             const logoutUrl = "{{ url_for('program_chat.track_logout') }}";
             if(navigator.sendBeacon) {
@@ -167,40 +219,27 @@
             }
         });
 
-
-
         const resizer = document.getElementById('resizer-drag-handle');
         const leftPanel = document.getElementById('chat-panel');
         const rightPanel = document.getElementById('code-panel');
-
         let isResizing = false;
 
         resizer.addEventListener('mousedown', (e) => {
             isResizing = true;
-            
             document.body.style.userSelect = 'none';
             document.body.style.pointerEvents = 'none';
-
-            
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
         });
 
         function handleMouseMove(e) {
             if (!isResizing) return;
-
-            
             const container = resizer.parentElement;
             const containerRect = container.getBoundingClientRect();
-            const leftPanelWidth = e.clientX - containerRect.left;
-
-           
+            let leftPanelWidth = e.clientX - containerRect.left;
             const minWidth = 300;
-            if (leftPanelWidth < minWidth || leftPanelWidth > containerRect.width - minWidth) {
-                return;
-            }
-
-           
+            if (leftPanelWidth < minWidth) leftPanelWidth = minWidth;
+            if (leftPanelWidth > containerRect.width - minWidth) leftPanelWidth = containerRect.width - minWidth;
             const leftFlex = leftPanelWidth / containerRect.width;
             leftPanel.style.flex = leftFlex.toString();
             rightPanel.style.flex = (1 - leftFlex).toString();
@@ -208,7 +247,6 @@
 
         function handleMouseUp() {
             isResizing = false;
-           
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
             document.body.style.userSelect = 'auto';
