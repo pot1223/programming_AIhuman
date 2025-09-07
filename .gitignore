@@ -1,3 +1,8 @@
 venv
 local.sqlite
 .env
+chroma/
+data/
+*.sqlite3
+
+__pycache__/
