@@ -1,199 +1,218 @@
 {% extends "chatbot/base.html" %}
 
 {% block content %}
-<div id="main-container" class="main-container">
-    <div class="video-container">
-        <div class="video-notice">본 강의는 AI휴먼이 설명하는 강의입니다</div>
-        <video controls autoplay muted loop><source src="{{ url_for('program_chat.static', filename='video/pro_video.mp4') }}" type="video/mp4"></video>
-        <button id="toggle-chat-btn">채팅 열기</button>
-    </div>
-    <div class="chat-container">
+<div class="main-container-split">
+
+    <div class="chat-panel" id="chat-panel">
         <div class="chat-header">AI 챗봇</div>
         <div class="chat-messages"></div>
         <div class="chat-input-area">
             <input type="text" id="chat-input" placeholder="메시지를 입력하세요...">
-            <button id="send-btn"> ▶</button>
+            <button id="send-btn">▶</button>
         </div>
     </div>
-</div> 
+
+ 
+    <div class="resizer" id="resizer-drag-handle"></div>
+
+
+    <div class="code-panel" id="code-panel">
+        <div class="code-header">
+            <span>코드 뷰어</span>
+            <button id="clear-code-btn">초기화</button>
+        </div>
+        <div class="code-content">
+            <div class="placeholder">AI가 생성한 코드가 여기에 표시됩니다.</div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 
 {% block scripts %}
-{{ super() }}
 <script>
-    // --- 채팅창 열고 닫기 기능 (기존과 동일) ---
-    const toggleBtn = document.getElementById('toggle-chat-btn');
-    const mainContainer = document.getElementById('main-container');
-    toggleBtn.addEventListener('click', () => {
-        mainContainer.classList.toggle('chat-open');
-        toggleBtn.textContent = mainContainer.classList.contains('chat-open') ? '채팅 닫기' : '채팅 열기';
-    });
-    window.addEventListener('beforeunload', function(event) {
-        // 'track_logout' 으로 수정합니다.
-        const logoutUrl = "{{ url_for('program_chat.track_logout') }}";
-        navigator.sendBeacon(logoutUrl);
-    });
-
-    // --- ▼▼▼ 챗봇 기능 (최종 완성본) ▼▼▼ ---
-    const sendBtn = document.getElementById('send-btn');
-    const chatInput = document.getElementById('chat-input');
-    const messagesContainer = document.querySelector('.chat-messages');
-    let chatHistory = [];
-
-    function escapeHtml(unsafe) {
-        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-
-    function addMessageToScreen(role, content = '') {
-        const messageDiv = document.createElement('div');
-        messageDiv.style.marginBottom = '15px';
-        messageDiv.dataset.role = role;
-        const prefix = `<strong>${role === 'user' ? '나' : '챗봇'}:</strong><br>`;
-        if (role === 'user') {
-            messageDiv.innerHTML = prefix + escapeHtml(content).replace(/\n/g, '<br>');
-        } else {
-            // 챗봇 메시지는 텍스트와 코드 블록이 들어갈 컨테이너 역할만 합니다.
-            messageDiv.innerHTML = prefix;
-        }
-        messagesContainer.appendChild(messageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        return messageDiv;
-    }
+    document.addEventListener('DOMContentLoaded', function() {
+ 
+        const sendBtn = document.getElementById('send-btn');
+        const chatInput = document.getElementById('chat-input');
+        const messagesContainer = document.querySelector('.chat-messages');
+        const codeContainer = document.querySelector('.code-content');
+        const clearCodeBtn = document.getElementById('clear-code-btn');
+        const codePlaceholder = document.querySelector('.code-content .placeholder');
+        let chatHistory = [];
 
     
-// ▼▼▼ 여기가 최종 수정된 sendMessage 함수입니다 ▼▼▼
-    async function sendMessage() {
-        const messageText = chatInput.value.trim();
-        if (messageText === '') return;
-
-        addMessageToScreen('user', messageText);
-        chatHistory.push({ "role": "user", "content": messageText });
-        chatInput.value = '';
-
-        const botMessageDiv = addMessageToScreen('assistant');
-        let fullBotResponse = '';
-
-        // 1. 응답 대기 메시지 표시
-        const waitingMessage = document.createElement('span');
-        waitingMessage.className = 'waiting-message';
-        waitingMessage.textContent = '답변을 생성 중입니다...';
-        botMessageDiv.appendChild(waitingMessage);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-        try {
-            const response = await fetch("{{ url_for('program_chat.process_chat') }}", {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ "message": messageText, "history": chatHistory.slice(0, -1) }),
-            });
-
-            if (!response.ok) throw new Error('서버 응답 오류');
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        function addMessageToScreen(role, content = '') {
+            const messageDiv = document.createElement('div');
+            messageDiv.style.marginBottom = '15px';
+            const prefix = `<strong>${role === 'user' ? '나' : '챗봇'}:</strong><br>`;
             
-            // ▼▼▼ 수정된 부분 ▼▼▼
-            let isFirstChunk = true;
-            let currentTextSpan = null; // 변수 선언만 하고, 아직 만들거나 추가하지 않음
-            // ▲▲▲ 여기까지 수정 ▲▲▲
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                // ▼▼▼ 수정된 부분 ▼▼▼
-                // 첫번째 청크가 도착하면 '그때' 대기 메시지를 지운다.
-                if (isFirstChunk) {
-                    botMessageDiv.removeChild(waitingMessage);
-                    isFirstChunk = false;
-                }
-                // ▲▲▲ 여기까지 수정 ▲▲▲
-
-                const chunk = decoder.decode(value);
-                fullBotResponse += chunk;
-
-                if (chunk.trim().startsWith('```') && chunk.trim().endsWith('```')) {
-                    // 코드 블록이 오면, 텍스트를 담던 span을 null로 초기화해서 새롭게 시작하도록 함
-                    currentTextSpan = null; 
-                    renderCodeBlock(botMessageDiv, chunk);
-
-                } else {
-                    // ▼▼▼ 수정된 부분 ▼▼▼
-                    // 일반 텍스트일 경우, currentTextSpan이 없으면 새로 만든다.
-                    // (코드 블록 바로 뒤에 오는 텍스트를 처리하기 위함)
-                    if (!currentTextSpan) {
-                        currentTextSpan = document.createElement('span');
-                        botMessageDiv.appendChild(currentTextSpan);
-                    }
-                    currentTextSpan.innerHTML += escapeHtml(chunk).replace(/\n/g, '<br>');
-                    // ▲▲▲ 여기까지 수정 ▲▲▲
-                }
-
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-            chatHistory.push({ "role": "assistant", "content": fullBotResponse });
-
-        } catch (error) {
-            console.error('Error:', error);
-            // 오류 발생 시에도 대기 메시지를 확실히 지움
-            if (botMessageDiv.contains(waitingMessage)) {
-                waitingMessage.textContent = '죄송합니다, 오류가 발생했습니다.';
+            if (role === 'user') {
+                messageDiv.innerHTML = prefix + escapeHtml(content).replace(/\n/g, '<br>');
             } else {
-                 botMessageDiv.innerHTML += '죄송합니다, 오류가 발생했습니다.';
+                messageDiv.innerHTML = prefix;
+            }
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            return messageDiv;
+        }
+        function renderCodeBlock(codeContent) {
+            const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/;
+            const match = codeBlockRegex.exec(codeContent);
+            if (!match) return;
+            const language = match[1] || 'plaintext';
+            const code = match[2];
+            const container = document.createElement('div');
+            container.className = 'code-block-container';
+            const header = document.createElement('div');
+            header.className = 'code-block-header';
+            const langSpan = document.createElement('span');
+            langSpan.textContent = language;
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.textContent = '복사';
+            header.appendChild(langSpan);
+            header.appendChild(copyBtn);
+            const pre = document.createElement('pre');
+            const codeEl = document.createElement('code');
+            codeEl.className = `language-${escapeHtml(language)}`;
+            codeEl.textContent = code;
+            pre.appendChild(codeEl);
+            container.appendChild(header);
+            container.appendChild(pre);
+            if (codePlaceholder) {
+                codePlaceholder.style.display = 'none';
+            }
+            codeContainer.appendChild(container);
+            codeContainer.scrollTop = codeContainer.scrollHeight;
+            hljs.highlightElement(codeEl);
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(code).then(() => {
+                    copyBtn.textContent = '복사 완료!';
+                    copyBtn.classList.add('copied');
+                    setTimeout(() => {
+                        copyBtn.textContent = '복사';
+                        copyBtn.classList.remove('copied');
+                    }, 2000);
+                });
+            });
+        }
+        async function sendMessage() {
+            const messageText = chatInput.value.trim();
+            if (messageText === '') return;
+            addMessageToScreen('user', messageText);
+            chatHistory.push({ "role": "user", "content": messageText });
+            chatInput.value = '';
+            chatInput.focus();
+            const botMessageDiv = addMessageToScreen('assistant');
+            let fullBotResponse = '';
+            let currentTextSpan = document.createElement('span');
+            botMessageDiv.appendChild(currentTextSpan);
+            try {
+                const response = await fetch("{{ url_for('program_chat.process_chat') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ "message": messageText, "history": chatHistory.slice(0, -1) }),
+                });
+                if (!response.ok) throw new Error('서버 응답 오류');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullBotResponse += chunk;
+                    if (chunk.trim().startsWith('```')) {
+                        renderCodeBlock(chunk);
+                    } else {
+                        currentTextSpan.innerHTML += escapeHtml(chunk).replace(/\n/g, '<br>');
+                    }
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+                chatHistory.push({ "role": "assistant", "content": fullBotResponse });
+            } catch (error) {
+                console.error('Error:', error);
+                currentTextSpan.innerHTML += '<br><strong style="color: red;">오류가 발생했습니다.</strong>';
             }
         }
-    }
 
-    // 코드 블록 청크를 받아서 스타일링된 HTML 요소로 만들어 삽입하는 함수
-    function renderCodeBlock(parentDiv, codeContent) {
-        const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/;
-        const match = codeBlockRegex.exec(codeContent);
-        if (!match) return;
 
-        const language = match[1] || 'plaintext';
-        const code = match[2];
-
-        const container = document.createElement('div');
-        container.className = 'code-block-container';
-
-        const button = document.createElement('button');
-        button.className = 'copy-btn';
-        button.textContent = '복사';
-        
-        const pre = document.createElement('pre');
-        const codeEl = document.createElement('code');
-        codeEl.className = `language-${escapeHtml(language)}`;
-        codeEl.textContent = code; // escapeHtml 대신 textContent를 사용해 안전하게 삽입
-
-        pre.appendChild(codeEl);
-        container.appendChild(button);
-        container.appendChild(pre);
-        
-        // 부모 div(챗봇 메시지 div)에 최종적으로 추가
-        parentDiv.appendChild(container);
-
-        // Syntax Highlighting 및 복사 버튼 이벤트 적용
-        hljs.highlightElement(codeEl);
-        button.addEventListener('click', () => {
-            navigator.clipboard.writeText(code).then(() => {
-                button.textContent = '복사 완료!';
-                button.classList.add('copied');
-                setTimeout(() => {
-                    button.textContent = '복사';
-                    button.classList.remove('copied');
-                }, 2000);
-            });
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', (event) => {
+            if (event.isComposing) return;
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
         });
-    }
+        clearCodeBtn.addEventListener('click', () => {
+            codeContainer.innerHTML = '';
+            if (codePlaceholder) {
+                 codeContainer.appendChild(codePlaceholder);
+                 codePlaceholder.style.display = 'block';
+            }
+        });
+        window.addEventListener('beforeunload', function(event) {
+            const logoutUrl = "{{ url_for('program_chat.track_logout') }}";
+            if(navigator.sendBeacon) {
+                navigator.sendBeacon(logoutUrl);
+            }
+        });
 
-    // --- 이벤트 리스너 (기존과 동일) ---
-    sendBtn.addEventListener('click', sendMessage);
-    chatInput.addEventListener('keydown', (event) => {
-        if (event.isComposing) return;
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            sendMessage();
+
+
+        const resizer = document.getElementById('resizer-drag-handle');
+        const leftPanel = document.getElementById('chat-panel');
+        const rightPanel = document.getElementById('code-panel');
+
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            
+            document.body.style.userSelect = 'none';
+            document.body.style.pointerEvents = 'none';
+
+            
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        });
+
+        function handleMouseMove(e) {
+            if (!isResizing) return;
+
+            
+            const container = resizer.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const leftPanelWidth = e.clientX - containerRect.left;
+
+           
+            const minWidth = 300;
+            if (leftPanelWidth < minWidth || leftPanelWidth > containerRect.width - minWidth) {
+                return;
+            }
+
+           
+            const leftFlex = leftPanelWidth / containerRect.width;
+            leftPanel.style.flex = leftFlex.toString();
+            rightPanel.style.flex = (1 - leftFlex).toString();
+        }
+
+        function handleMouseUp() {
+            isResizing = false;
+           
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.userSelect = 'auto';
+            document.body.style.pointerEvents = 'auto';
         }
     });
 </script>

@@ -1,74 +1,31 @@
 {% extends "chatbot/base.html" %}
-{% block title %} 로그인{% endblock %}
+{% block title %}로그인{% endblock %}
 {% block content %}
 
 <div class="mx-auto dt-auth-main">
-    <div class = "card dt-auth-login">
-        <header>로그인</header>
+    <div class="card dt-auth-login">
+        <header>챗봇 입장하기</header>
         <section>
-            {# id를 추가하여 JavaScript가 form을 쉽게 찾도록 합니다. #}
-            <form id="login-form" action = "{{url_for('program_chat.index')}}" method = "post">
-                {# 에러 메시지를 표시할 공간을 만듭니다. #}
-                <span id="flash-message" class ="dt-auth-flash">
-                    {% for message in get_flashed_messages() %}
-                        {{message}}
-                    {% endfor %}
-                </span>
-                {{form.csrf_token}}
-                {{form.studentID(class="form-control dt-auth-input", placeholder="학번")}}
-                {{form.password(class="form-control dt-auth-input", placeholder="비밀번호")}}
-                {{form.submit(class="btn btn-md btn-primary btn-block dt-auth-btn")}}
+
+            <form action="{{ url_for('program_chat.index') }}" method="post" class="form-signin">
+                {{ form.csrf_token }}
+                
+             
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        <div class="dt-auth-flash">
+                            {{ messages[0] }}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                {{ form.studentID(class="form-control dt-auth-input", placeholder="학번") }}
+            
+                {{ form.password(class="form-control dt-auth-input", placeholder="수업 코드") }}
+                {{ form.submit(class="btn btn-md btn-primary btn-block dt-auth-btn") }}
             </form>
         </section>
     </div>
 </div>
 {% endblock %}
-
-{% block scripts %}
-{{ super() }}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const loginForm = document.getElementById('login-form');
-    const flashMessageSpan = document.getElementById('flash-message');
-
-    if (loginForm) {
-        loginForm.addEventListener('submit', async function(event) {
-            // 1. form의 기본 동작(페이지 새로고침)을 막습니다.
-            event.preventDefault();
-
-            // 2. form 데이터를 가져옵니다.
-            const formData = new FormData(loginForm);
-
-            try {
-                // 3. 서버에 백그라운드(AJAX)로 데이터를 보냅니다.
-                const response = await fetch(loginForm.action, {
-                    method: 'POST',
-                    body: formData,
-                    // 우리가 보낸 요청이 AJAX 요청임을 서버에 알립니다.
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-
-                const result = await response.json(); // 서버의 JSON 응답을 받습니다.
-
-                // 4. 서버 응답에 따라 동작합니다.
-                if (result.success) {
-                    // 성공했다면, 서버가 알려준 URL로 페이지를 완전히 이동시킵니다.
-                    window.location.href = result.redirect_url;
-                } else {
-                    // 실패했다면, 에러 메시지를 화면에 표시합니다.
-                    flashMessageSpan.textContent = result.message;
-                }
-            } catch (error) {
-                console.error('Login Error:', error);
-                flashMessageSpan.textContent = '로그인 중 오류가 발생했습니다.';
-            }
-        });
-    }
-});
-</script>
-{% endblock %}
-
-
 

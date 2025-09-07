@@ -1,46 +1,40 @@
 <!DOCTYPE html>
-<html lang = "ko">
-    <head>
-        <meta charset="UTF-8" />
-        <title> chatbot</title>
-        <link rel="stylesheet" href="{{url_for('program_chat.static', filename='css/bootstrap.min.css')}}"/>
-        <link rel="stylesheet" href="{{url_for('program_chat.static', filename = 'css/style.css')}}" />
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    </head>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>문제해결과 프로그래밍 챗봇</title>
+    <link rel="stylesheet" href="{{ url_for('program_chat.static', filename='css/bootstrap.min.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('program_chat.static', filename='css/style.css') }}" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('program_chat.index') }}">문제해결과 프로그래밍</a>
+            <ul class="navbar-nav">
+                {% if current_user.is_authenticated %}
+                <li class="nav-item">
+                  
+                    <span class="nav-link">{{ current_user.studentid }}</span>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('program_chat.logout') }}" class="nav-link">로그아웃</a>
+                </li>
+                {% else %}
+        
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('program_chat.index') }}">로그인</a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
 
-    <body>
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-            <div class="container">
-                <a class="navbar-brand" href="{{url_for('program_chat.index')}}">문제해결과 프로그래밍</a>
-                <ul class="navbar-nav">
-                    {% if current_user.is_authenticated %}
-                    <li class="nav-item">
-                        <span class="nav-link">{{current_user.username}}</span>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{url_for('program_chat.logout')}}" class="nav-link">로그아웃</a>
-                    </li>
-                    {% else %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{url_for('program_chat.sign')}}">회원가입</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{url_for('program_chat.index')}}">로그인</a>
-                    </li>
-                    {% endif %}
-
-                </ul>
-
-            </div>
-        </nav>
-
-        <section class = "container">
+    <section class="container">
         {% block content %}{% endblock %}
-        </section>
+    </section>
 
-        {% block scripts %}{% endblock %}
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    </body>
-
-
+    {% block scripts %}{% endblock %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</body>
 </html>

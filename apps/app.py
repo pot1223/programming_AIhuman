@@ -31,7 +31,7 @@ def create_app(config_key='dev'):
     # 사용자가 로그인할 때 실행될 함수
     @user_logged_in.connect_via(app)
     def _logged_in_handler(sender, user, **extra):
-        new_session = UserSession(user_id=user.id,studentid = user.studentid)
+        new_session = UserSession(user_id=user.id)
         db.session.add(new_session)
         db.session.commit()
         session['user_session_id'] = new_session.id
