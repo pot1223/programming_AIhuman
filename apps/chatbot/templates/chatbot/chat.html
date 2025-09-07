@@ -211,12 +211,12 @@
             newPlaceholder.textContent = 'AI가 생성한 코드가 여기에 표시됩니다.';
             codeContainer.appendChild(newPlaceholder);
         });
-
+        
         window.addEventListener('beforeunload', function(event) {
             const logoutUrl = "{{ url_for('program_chat.track_logout') }}";
-            if(navigator.sendBeacon) {
-                navigator.sendBeacon(logoutUrl);
-            }
+            // navigator.sendBeacon을 사용하여 브라우저가 비동기적으로 데이터를 전송하도록 합니다.
+            // 이 방식은 페이지가 닫히는 중에도 요청이 취소되지 않도록 보장합니다.
+            navigator.sendBeacon(logoutUrl);
         });
 
         const resizer = document.getElementById('resizer-drag-handle');

@@ -213,11 +213,12 @@ def process_chat():
 
             # 5단계: 전체 답변을 DB에 저장
             code_blocks = re.findall(r'```[\s\S]*?```', full_response)
-            extracted_code = "\n\n".join(code_blocks) if code_blocks else None
+            text_blocks = re.sub(r'```[\s\S]*?```', '', full_response).strip()
+            extracted_code = "".join(code_blocks) if code_blocks else None
             
             chat_log = ChatLog(
                 user_query=user_message,
-                assistant_response=full_response,
+                assistant_response= text_blocks ,
                 code=extracted_code,
                 user_id=current_user.id
             )
