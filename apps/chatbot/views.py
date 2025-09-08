@@ -232,3 +232,4 @@ def process_chat():
             yield "죄송합니다. 응답 생성 중 오류가 발생했습니다."
 
     return Response(generate_response_stream(), mimetype='text/plain')
+
