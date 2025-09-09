@@ -17,6 +17,10 @@ login_manager.login_message = ""
 def create_app(config_key='dev'):
     app = Flask(__name__)
     app.config.from_object(config[config_key])
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,   # 끊어진 커넥션 자동 감지 후 재연결
+        "pool_recycle": 1800     # 30분마다 커넥션 새로 고침
+    }
     login_manager.init_app(app)
     app.config['SESSION_PERMANENT'] = False
     db.init_app(app)
